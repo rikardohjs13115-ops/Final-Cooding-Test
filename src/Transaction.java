@@ -1,5 +1,5 @@
 public class Transaction {
-    // Data transaksi peminjaman
+    // Data khusus tiap transaksi peminjaman
     private String transactionId;
     private Member member;
     private Book book;
@@ -9,12 +9,12 @@ public class Transaction {
     private int daysLate;
     private double lateFee;
 
-    // Data untuk menghitung jumlah transaksi dan ID otomatis
+    // Variabel yang berlaku untuk seluruh transaksi
     private static int totalTransactions = 0;
     private static int transactionCounter = 0;
     private static final double LATE_FEE_PER_DAY = 2000.0;
 
-    // Membuat transaksi baru + cek tanggal
+    // Membuat transaksi baru jika tanggal valid
     public Transaction(Member member, Book book, String borrowDate, int borrowDurationDays) {
         if (isValidDate(borrowDate)) {
             this.transactionId = generateTransactionId();
@@ -32,13 +32,13 @@ public class Transaction {
         }
     }
 
-    // Membuat ID otomatis (TRX001)
+    // Membuat ID transaksi secara otomatis (TRX001, TRX002, ...)
     private String generateTransactionId() {
         transactionCounter++;
         return String.format("TRX%03d", transactionCounter);
     }
 
-    // Validasi format tanggal dasar
+    // Mengecek apakah format tanggal benar (DD-MM-YYYY)
     private static boolean isValidDate(String date) {
         if (date == null || !date.matches("\\d{2}-\\d{2}-\\d{4}")) return false;
 
@@ -47,19 +47,17 @@ public class Transaction {
         int month = Integer.parseInt(parts[1]);
         int year = Integer.parseInt(parts[2]);
 
-        return day >= 1 && day <= 31 &&
-                month >= 1 && month <= 12 &&
-                year >= 1900 && year <= 2025;
+        return day >= 1 && day <= 31 && month >= 1 && month <= 12 && year >= 1900 && year <= 2025;
     }
 
-    // Hitung tanggal jatuh tempo berdasarkan lama pinjam
+    // Hitung tanggal jatuh tempo peminjaman
     private String calculateDueDate(String borrowDate, int days) {
         String[] parts = borrowDate.split("-");
         int day = Integer.parseInt(parts[0]) + days;
         int month = Integer.parseInt(parts[1]);
         int year = Integer.parseInt(parts[2]);
 
-        // Perhitungan sederhana
+        // Penyesuaian jika lewat bulan atau tahun
         while (day > 31) {
             day -= 31;
             month++;
@@ -72,20 +70,40 @@ public class Transaction {
         return String.format("%02d-%02d-%04d", day, month, year);
     }
 
-    // Mengubah tanggal jadi angka untuk perbandingan sederhana
-    private static int dateToDay(String date) {
+    // Mengubah tanggal jadi angka untuk perhitungan
+    private static long dateToDay(String date) {
         String[] parts = date.split("-");
         int day = Integer.parseInt(parts[0]);
         int month = Integer.parseInt(parts[1]);
         int year = Integer.parseInt(parts[2]);
-        return year * 10000 + month * 100 + day;
+
+        return (long) year * 365 + month * 30 + day;
     }
 
-    // Perkiraan selisih hari
+    // Hitung selisih hari antara dua tanggal
     private static int daysBetween(String date1, String date2) {
-        int d1 = dateToDay(date1);
-        int d2 = dateToDay(date2);
-        return Math.abs(d2 - d1) / 100;
+        long d1 = dateToDay(date1);
+        long d2 = dateToDay(date2);
+        return (int) Math.abs(d2 - d1);
+    }
+
+    // Hitung berapa hari telat
+    private void calculateDaysLate() {
+        if (dateToDay(returnDate) > dateToDay(dueDate)) {
+            this.daysLate = daysBetween(dueDate, returnDate);
+        } else {
+            this.daysLate = 0;
+        }
+    }
+
+    // Hitung denda berdasarkan telat dan diskon member
+    private void calculateLateFee() {
+        if (daysLate > 0) {
+            double discount = 1 - member.getMembershipDiscount();
+            this.lateFee = daysLate * LATE_FEE_PER_DAY * discount;
+        } else {
+            this.lateFee = 0;
+        }
     }
 
     // Proses pengembalian buku
@@ -101,53 +119,38 @@ public class Transaction {
         }
 
         this.returnDate = returnDate;
-
-        if (dateToDay(returnDate) > dateToDay(dueDate)) {
-            this.daysLate = daysBetween(dueDate, returnDate);
-        } else {
-            this.daysLate = 0;
-        }
-
+        calculateDaysLate();
         calculateLateFee();
         book.returnBook();
     }
 
-    // Hitung denda terlambat berdasarkan membership
-    public void calculateLateFee() {
-        if (daysLate > 0) {
-            double discount = 1 - member.getMembershipDiscount();
-            this.lateFee = daysLate * LATE_FEE_PER_DAY * discount;
-        } else {
-            this.lateFee = 0;
-        }
-    }
-
-    // Mengecek apakah masih dipinjam dan sudah lewat jatuh tempo
+    // Mengecek apakah buku masih belum dikembalikan dan sudah lewat jatuh tempo
     public boolean isOverdue(String currentDate) {
-        if (returnDate != null) return false;
+        if (returnDate != null) {
+            return false;
+        }
         return dateToDay(currentDate) > dateToDay(dueDate);
     }
 
-    // Status transaksi (Aktif, Terlambat, atau Selesai)
+    // Status transaksi saat ini
     public String getTransactionStatus() {
         if (returnDate != null) {
+            if (daysLate > 0) return "Selesai (Terlambat)";
             return "Selesai";
         }
 
-        String currentDate = "05-12-2025"; // contoh tanggal hari ini
-        if (isOverdue(currentDate)) {
-            return "Terlambat";
-        }
+        String currentDate = "05-12-2025"; // contoh tanggal pengecekan
+        if (isOverdue(currentDate)) return "Terlambat";
 
         return "Aktif";
     }
 
-    // Total transaksi tercatat
+    // Mendapatkan total seluruh transaksi
     public static int getTotalTransactions() {
         return totalTransactions;
     }
 
-    // -------- Getter --------
+    // Getter untuk atribut penting transaksi
     public String getTransactionId() { return transactionId; }
     public Member getMember() { return member; }
     public Book getBook() { return book; }
